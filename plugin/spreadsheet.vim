@@ -2,8 +2,10 @@
 " File: spreadsheet.vim
 " Author: Miguel Jaque Barbero <mjaque@ilkebenson.com>
 " Last Change: 09.02.2003
-" Version: 0.1a
+" Version: 0.1b
 " ChangeLog:
+" 	0.1b :	Improved functionality for cursor positioning.
+" 	
 " 	0.1a :  Added mapping and command for quick cell definition
 " 		cell will allow quick insertion of cell labels
 " 		command :Cell with or without cell label do the same
@@ -139,14 +141,12 @@ syntax region SpreadSheetMark start=/(#/ end=/)/
 highlight SpreadSheetMark ctermfg=DarkBlue guifg=DarkBlue
 
 function Get(cell)
-	" Remember cursor position
-	let xpos = col(".")
-	let ypos = line(".")
+	call GetCursorPosition()	" Remember cursor position
 	call search("(#".a:cell.")","w") " Seek cell label
 	call search(')')		" To avoid problems with cell labels with numbers
 	call search('\d')		" Go to numeric value
 	let value = expand("<cWORD>")	" Get the value
-	call cursor(ypos, xpos)		" Restore cursor position
+	call SetCursorPosition()	" Restore cursor position
 	if g:spreadsheet_translate == 1
 		let value = TobcFormat(value)
 	endif
@@ -158,22 +158,18 @@ function Set(cell, value)
 	if g:spreadsheet_translate == 1
 		let value = ToHumanFormat(value)
 	endif
-	" Remember cursor position
-	let xpos = col(".")
-	let ypos = line(".")
+	call GetCursorPosition()	" Remember cursor position
 	let cell = "(#".a:cell.")"	" Build cell label
 	let line = search(cell,"w")	" Seek cell label
 	call search(')')		" To avoid problems with cell labels with numbers
 	call search('\d')		" Go to numeric value
 	let actualValue = expand("<cWORD>")	" Get actual value
 	call setline(line, substitute(getline(line), cell.'\s*'.actualValue, cell." ".value,""))	" Change actual value for argument
-	call cursor(ypos, xpos)		" Restore cursor
+	call SetCursorPosition()	" Restore cursor position
 endfunction
 
 function Calculate(operation)
-	" Remember cursor position
-	let xpos = col(".")
-	let ypos = line(".")
+	call GetCursorPosition()	" Remember cursor position
 	let string = 'echo "'.a:operation.'" | bc -l'	" Build operation command
 	" Write result in new line
 	silent execute "normal :read! ".string."\<cr>"
@@ -185,7 +181,7 @@ function Calculate(operation)
 	if position != -1				" If exists
 		let result = strpart(result, 0, position + g:spreadsheet_precision + 1) " Cut result
 	endif
-	call cursor(ypos, xpos)		" Restore cursor
+	call SetCursorPosition()	" Restore cursor position
 	return result
 endfunction
 
@@ -228,4 +224,24 @@ function ToHumanFormat(string)
 		let result = strpart(result, 0, position).g:spreadsheet_thousand.strpart(result,position)
 	endwhile
 	return result
+endfunction
+
+" The cursor positioning functions GetCursorPosition and SetCursorPosition
+" work as a LIFO queue.
+" Each cursor position has three values, window, x and y.
+
+let g:spreadsheet_crNumber = 0
+
+function GetCursorPosition()
+	let g:spreadsheet_crNumber = g:spreadsheet_crNumber + 1
+	let g:spreadsheet_crBuffer_{g:spreadsheet_crNumber} = bufnr("%")
+	let g:spreadsheet_crX_{g:spreadsheet_crNumber} = col(".")
+	let g:spreadsheet_crY_{g:spreadsheet_crNumber} = line(".")
+endfunction
+
+function SetCursorPosition()
+	let window = bufwinnr(g:spreadsheet_crBuffer_{g:spreadsheet_crNumber})
+	exe "normal \<c-w>".window."w"	
+	call cursor(g:spreadsheet_crY_{g:spreadsheet_crNumber}, g:spreadsheet_crX_{g:spreadsheet_crNumber})
+	let g:spreadsheet_crNumber = g:spreadsheet_crNumber - 1
 endfunction
