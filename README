@@ -1,0 +1,14 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=558
+
+This script lets you use vim as a spreadsheet, adding arithmetic calculations to your text files.
+
+Useful for bills, expenses, ratings and other numeric text templates.
+
+It provides three main functions:
+   Get("cell")
+   Set("cell", "value")
+   Calculate("operation")
+
+Detailed instructions and examples are included in the script file.
+
+It uses 'bc'  Linux OS comand for the Calculate function.
