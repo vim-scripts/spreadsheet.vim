@@ -2,7 +2,14 @@
 " File: spreadsheet.vim
 " Author: Miguel Jaque Barbero <mjaque@ilkebenson.com>
 " Last Change: 09.02.2003
-" Version: 0.1
+" Version: 0.1a
+" ChangeLog:
+" 	0.1a :  Added mapping and command for quick cell definition
+" 		cell will allow quick insertion of cell labels
+" 		command :Cell with or without cell label do the same
+"
+" 		Added translation for different number sintax
+" 		
 " Acknowledgement:
 " Installation:
 " 	Simply copy this file in your .vim/plugin directory.
@@ -20,16 +27,23 @@
 "	To create a cell simply put the string "(#Name)" BEFORE the WORD you
 "	want to become a cell. No closing mark is required, because the first
 "	WORD after the mark will be used. 
+"
+"	You can also use the :Cell <label> command. If no label is given you
+"	will be prompted for input.
+"		
+"		:Cell CellLable
+"
+"	Or the mapping "cell" at command mode. 
 "	
 "	For Example: In the following text "Price1", "Price2", "Sum", "VAT"
 "	and "Tot" are cell labels:
 "
 "	BILL
-"		Item 1			(#Price1) 700.00 euros
-"		Item 2			(#Price2)  30.75 euros
-"		SUM			(#Sum)      0 euros
-"		V.A.T.			(#VAT)      0 euros
-"		TOTAL			(#Tot)	    0 euros
+"		Item 1			(#Price1) 1.700,00 euros
+"		Item 2			(#Price2)    30,75 euros
+"		SUM			(#Sum)        0 euros
+"		V.A.T.			(#VAT)        0 euros
+"		TOTAL			(#Tot)	      0 euros
 "
 "	You can then use the functions to create formulas for your file.
 "
@@ -60,6 +74,16 @@
 "	is 2 decimal digits) by setting the g:spreadsheet_precision variable
 "	in your .vimrc
 "
+"	The script translates from "your" number sintax to bc required sintax,
+"	(which is no thousand separator and "." as decimal separator (this
+"	could be different in your sistem)) to a human sintax (by default, "."
+"	as the thousand separator and "," as the decimal separator). This
+"	values may be changed defining g:spreadsheet_thousand and
+"	g:spreadsheet_decimal variables.
+"
+"	Also you can disable number sintax translation asigning
+"	g:spreadsheet_translate the value 0
+"
 " TODO:
 " 	Actually, no error control is implemented. You can try to add two non
 " 	numeric words and get a horrible "parse error" result. This will be
@@ -74,6 +98,10 @@
 "	may be different on other systems. If it doesn't work properly on your
 "	system, send me an email and I'll try to do my best.
 "
+" Known Bugs:
+"	ToHumanFormat functions gives unwanted result with negative values
+"	less than 1000. Instead of -183,90 if gives -.183,90
+" 
 " Questions, suggestions, improvements, bugs, hints, acknowledge and support
 " should be sent to mjaque@ilkebenson.com
 "
@@ -83,13 +111,27 @@
 " Free Software Foundation (www.fsf.org). So you have the right to use, distribute,
 " change and publish it as you wish, as long as it remains free software and the
 " GPL license is kept. So don't remove this notice.
-" 	
 
+
+" Constant definition
 if !exists("g:spreadsheet_precision")
-  let g:spreadsheet_precision = 2
+	let g:spreadsheet_precision = 2
 endif
 
-" Sintax definition
+if !exists("g:spreadsheet_translate")
+	let g:spreadsheet_translate = 1
+endif
+
+if !exists("g:spreadsheet_decimal")
+	let g:spreadsheet_decimal = ","
+endif
+
+if !exists("g:spreadsheet_thousand")
+	let g:spreadsheet_thousand = "."
+endif
+
+
+" Highlighting definition
 setlocal iskeyword+=(
 setlocal iskeyword+=)
 setlocal iskeyword+=#
@@ -105,10 +147,17 @@ function Get(cell)
 	call search('\d')		" Go to numeric value
 	let value = expand("<cWORD>")	" Get the value
 	call cursor(ypos, xpos)		" Restore cursor position
+	if g:spreadsheet_translate == 1
+		let value = TobcFormat(value)
+	endif
 	return value
 endfunction
 
 function Set(cell, value)
+	let value = a:value
+	if g:spreadsheet_translate == 1
+		let value = ToHumanFormat(value)
+	endif
 	" Remember cursor position
 	let xpos = col(".")
 	let ypos = line(".")
@@ -117,7 +166,7 @@ function Set(cell, value)
 	call search(')')		" To avoid problems with cell labels with numbers
 	call search('\d')		" Go to numeric value
 	let actualValue = expand("<cWORD>")	" Get actual value
-	call setline(line, substitute(getline(line), cell.'\s*'.actualValue, cell." ".a:value,""))	" Change actual value for argument
+	call setline(line, substitute(getline(line), cell.'\s*'.actualValue, cell." ".value,""))	" Change actual value for argument
 	call cursor(ypos, xpos)		" Restore cursor
 endfunction
 
@@ -137,5 +186,46 @@ function Calculate(operation)
 		let result = strpart(result, 0, position + g:spreadsheet_precision + 1) " Cut result
 	endif
 	call cursor(ypos, xpos)		" Restore cursor
+	return result
+endfunction
+
+" Functions and commands for quick cell definition.
+function AddCell(label)
+	let label = a:label
+	if label == ""
+		let label = input("Cell Label: ")
+	endif
+	silent execute "normal i(#".label.")"
+endfunction
+
+command -nargs=? Cell :call AddCell("<args>")
+"command -nargs=? Cell :silent execute "normal i(#<args>)"
+map cell :call AddCell("")<CR>
+
+" Functions to adapt local number syntax to bc
+" bc, the program used for Calculate() expects numbers to be in the following
+" format: 
+" 	ddddddddd.ddddd   for example     188282.8833
+" 	(This may be different for your system)
+" But personally I use dd.ddd,dd (21.344,98) specially in currency values.
+" This functions transform to and from bc formats. Use the
+" g:spreadsheet_decimal and g:spreadsheet_thousand variables to personalise.
+
+function TobcFormat(string)
+	let result = substitute(a:string, "\\".g:spreadsheet_thousand, "", "g")	" Remove all thousand simbols
+	let result = substitute(result, g:spreadsheet_decimal,".","")		" Remove the decimal sign
+	return result
+endfunction
+
+function ToHumanFormat(string)
+	let result = substitute(a:string, '\.',g:spreadsheet_decimal,"")
+	let position = match(result, g:spreadsheet_decimal)
+	if position == -1
+		let position = strlen(result)
+	endif
+	while position > 3
+		let position = position - 3
+		let result = strpart(result, 0, position).g:spreadsheet_thousand.strpart(result,position)
+	endwhile
 	return result
 endfunction
